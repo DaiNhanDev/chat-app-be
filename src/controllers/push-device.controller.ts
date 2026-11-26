@@ -1,15 +1,15 @@
 import { Response } from 'express';
 import { PushDeviceRepository } from 'src/repositories/push-device.repository';
-import { FirebaseRequest } from 'src/types/chat';
+import { ChatRequest } from 'src/types/chat-account';
 import { ErrorResponse } from 'src/utils/error.response';
 import { SuccessResponse } from 'src/utils/success.response';
 
 export class PushDeviceController {
   constructor(private readonly devices: Pick<PushDeviceRepository, 'register' | 'unregister'>) {}
 
-  register = async (req: FirebaseRequest, res: Response) => {
+  register = async (req: ChatRequest, res: Response) => {
     try {
-      await this.devices.register(req.firebaseUser.uid, req.params.deviceId!, req.body.token);
+      await this.devices.register(req.chatUser.uid, req.params.deviceId!, req.body.token);
     } catch (error) {
       if (error instanceof ErrorResponse) throw error;
       // Avoid logging an SDK error that could embed the registration token.
@@ -20,9 +20,9 @@ export class PushDeviceController {
     );
   };
 
-  unregister = async (req: FirebaseRequest, res: Response) => {
+  unregister = async (req: ChatRequest, res: Response) => {
     try {
-      await this.devices.unregister(req.firebaseUser.uid, req.params.deviceId!);
+      await this.devices.unregister(req.chatUser.uid, req.params.deviceId!);
     } catch {
       throw new Error('Push device removal failed');
     }

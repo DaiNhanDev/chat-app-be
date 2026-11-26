@@ -17,16 +17,62 @@ export const components = {
       type: 'http',
       scheme: 'bearer',
       bearerFormat: 'JWT',
-      description: 'JWT cho /auth/me',
-    },
-    firebaseIdToken: {
-      type: 'http',
-      scheme: 'bearer',
-      bearerFormat: 'Firebase ID token',
-      description: 'Firebase Auth ID token cho Chat và Push; giữ nguyên Firebase UID của frontend',
+      description:
+        'JWT server cho mọi REST API cần đăng nhập; Firebase ID token chỉ dùng cho SDK đọc RTDB',
     },
   },
   schemas: {
+    Conversation: {
+      type: 'object',
+      required: [
+        'id',
+        'title',
+        'memberIds',
+        'members',
+        'createdBy',
+        'createdAt',
+        'updatedAt',
+        'lastMessage',
+        'lastMessageId',
+        'lastSenderId',
+      ],
+      properties: {
+        id: { type: 'string' },
+        title: { type: 'string' },
+        memberIds: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 10 },
+        members: { type: 'object', additionalProperties: { type: 'string' } },
+        createdBy: { type: 'string' },
+        createdAt: { type: 'integer' },
+        updatedAt: { type: 'integer' },
+        lastMessage: { type: 'string' },
+        lastMessageId: { type: 'string' },
+        lastSenderId: { type: 'string' },
+      },
+    },
+    DirectConversation: {
+      allOf: [
+        ref('Conversation'),
+        {
+          type: 'object',
+          properties: {
+            memberIds: {
+              type: 'array',
+              items: { type: 'string' },
+              minItems: 2,
+              maxItems: 2,
+              uniqueItems: true,
+              description: 'Hai UID chat của ADMIN và USER trong phòng.',
+            },
+          },
+        },
+      ],
+    },
+    UserWithRoom: {
+      title: 'Tạo USER',
+      type: 'object',
+      required: ['user', 'conversation'],
+      properties: { user: ref('User'), conversation: ref('DirectConversation') },
+    },
     ErrorResponse: {
       type: 'object',
       required: ['success', 'statusCode', 'errorCode', 'message'],

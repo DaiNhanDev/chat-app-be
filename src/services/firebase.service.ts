@@ -5,6 +5,12 @@ import { PushDeviceRepository } from 'src/repositories/push-device.repository';
 import { ChatService } from 'src/services/chat.service';
 import { PushService } from 'src/services/push.service';
 
+import { ConversationRepository } from 'src/repositories/conversation.repository';
+import { ConversationService } from 'src/services/conversation.service';
+
+export const conversationService = new ConversationService(
+  new ConversationRepository(firebaseDatabase),
+);
 export const pushDeviceRepository = new PushDeviceRepository(firebaseDatabase);
 export const pushService = new PushService(pushDeviceRepository, firebaseMessaging, {
   baseUrl: env.pwaBaseUrl,

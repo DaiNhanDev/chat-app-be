@@ -19,6 +19,7 @@ const userSchema = new AppSchema<User>(
       required: true,
       unique: true,
       trim: true,
+      lowercase: true,
     },
     password: {
       type: String,
@@ -31,6 +32,11 @@ const userSchema = new AppSchema<User>(
       required: true,
     },
     code: { type: String },
+    initialAdmin: { type: Boolean, select: false },
+    // Cleared only after the user's room and both RTDB indexes are ready.
+    pendingRoomAdminId: { type: String, select: false },
+    // Only an administrator migration may assign this field, never a public API.
+    firebaseUid: { type: String, unique: true, sparse: true, select: false },
   },
   {
     collection: COLLECTION_NAME,
@@ -43,6 +49,15 @@ userSchema.index(
     name: 'code_unique_present',
     unique: true,
     partialFilterExpression: { code: { $type: 'string' } },
+  },
+);
+
+userSchema.index(
+  { initialAdmin: 1 },
+  {
+    name: 'initial_admin_unique',
+    unique: true,
+    partialFilterExpression: { initialAdmin: true },
   },
 );
 

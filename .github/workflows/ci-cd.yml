@@ -1,0 +1,108 @@
+name: Chat BE CI/CD
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+      - name: Package production release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+        run: tar -czf chat-be.tar.gz dist package.json package-lock.json ecosystem.config.js .env.example deploy/activate.sh deploy/write-env.cjs
+      - uses: actions/upload-artifact@v7
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+        with:
+          name: chat-be
+          path: chat-be.tar.gz
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    concurrency:
+      group: chat-be-production
+      queue: max
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: chat-be
+      - name: Deploy current master to PM2
+        env:
+          SERVER_IP: ${{ secrets.SERVER_IP }}
+          SERVER_USER: ${{ vars.SERVER_USER || secrets.SERVER_USER || 'root' }}
+          SSHPASS: ${{ secrets.SERVER_PASSWORD }}
+          SERVER_PORT: ${{ vars.SERVER_PORT || '22' }}
+          NODE_ENV: production
+          PORT: ${{ vars.PORT || '3615' }}
+          TRUST_PROXY: ${{ vars.TRUST_PROXY }}
+          BODY_LIMIT: ${{ vars.BODY_LIMIT }}
+          CORS_ORIGINS: ${{ vars.CORS_ORIGINS }}
+          CORS_MAX_AGE: ${{ vars.CORS_MAX_AGE }}
+          SESSION_COOKIE_SAME_SITE: ${{ vars.SESSION_COOKIE_SAME_SITE }}
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          JWT_SALT_ROUNDS: ${{ vars.JWT_SALT_ROUNDS }}
+          SHUTDOWN_TIMEOUT_MS: ${{ vars.SHUTDOWN_TIMEOUT_MS }}
+          PUBLIC_URL: ${{ vars.PUBLIC_URL }}
+          SWAGGER_SERVER: ${{ vars.SWAGGER_SERVER }}
+          LOG_LEVEL: ${{ vars.LOG_LEVEL }}
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          FIREBASE_DATABASE_URL: ${{ vars.FIREBASE_DATABASE_URL }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ vars.GOOGLE_APPLICATION_CREDENTIALS }}
+          PWA_BASE_URL: ${{ vars.PWA_BASE_URL }}
+          PUSH_TIMEOUT_MS: ${{ vars.PUSH_TIMEOUT_MS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          latest=$(git ls-remote --exit-code origin refs/heads/master | cut -f1)
+          if [[ "$latest" != "$GITHUB_SHA" ]]; then
+            echo "Skipping superseded commit $GITHUB_SHA"
+            exit 0
+          fi
+          : "${SERVER_IP:?Missing SERVER_IP}" "${SSHPASS:?Missing SERVER_PASSWORD}"
+          if ! command -v sshpass >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y sshpass
+          fi
+          umask 077
+          staging=$(mktemp -d "$RUNNER_TEMP/chat-be.XXXXXXXX")
+          trap 'rm -rf -- "$staging"' EXIT
+          mkdir "$staging/release"
+          tar -xzf chat-be.tar.gz -C "$staging/release"
+          (cd "$staging/release" && node deploy/write-env.cjs)
+          release="$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          tar -C "$staging/release" -czf - . |
+            sshpass -e ssh -T -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=15 -p "$SERVER_PORT" -l "$SERVER_USER" -- "$SERVER_IP" "
+              set -eu
+              umask 077
+              cd /var/www/chat-be
+              mkdir -p releases
+              mkdir releases/$release
+              cd releases/$release
+              tar -xzf -
+              exec bash deploy/activate.sh
+            "

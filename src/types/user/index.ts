@@ -7,6 +7,9 @@ export interface User extends Entity {
   password: string;
   role: RoleType;
   code?: string;
+  initialAdmin?: boolean;
+  firebaseUid?: string;
+  pendingRoomAdminId?: string;
 }
 
 export interface CreateUserInput {
@@ -14,4 +17,21 @@ export interface CreateUserInput {
   email: string;
   password: string;
   code?: string;
+}
+
+export interface CreateManagedUserInput extends CreateUserInput {
+  role?: RoleType;
+}
+
+export type UpdateUserInput = Partial<CreateManagedUserInput>;
+export type PublicUser = Omit<
+  User,
+  'password' | 'deletedAt' | 'initialAdmin' | 'firebaseUid' | 'pendingRoomAdminId'
+>;
+
+export interface UserListQuery {
+  page: number;
+  limit: number;
+  search?: string;
+  role?: RoleType;
 }

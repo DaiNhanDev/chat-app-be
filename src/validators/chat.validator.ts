@@ -8,6 +8,19 @@ const key = Joi.string()
   .required();
 
 export const chatSchemas = {
+  people: Joi.object({ email: Joi.string().email().trim().lowercase().required() }),
+  conversation: Joi.object({
+    participantIds: Joi.array()
+      .items(
+        Joi.string()
+          .lowercase()
+          .pattern(/^[a-f0-9]{24}$/)
+          .required(),
+      )
+      .length(1)
+      .required(),
+    title: Joi.string().valid(''),
+  }),
   conversationParams: Joi.object({
     conversationId: key.max(768),
   }),

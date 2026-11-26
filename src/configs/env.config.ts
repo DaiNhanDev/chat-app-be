@@ -23,9 +23,14 @@ const required = (name: string, developmentFallback?: string): string => {
   throw new Error(`${name} is required`);
 };
 
+const sessionCookieSameSite = (process.env.SESSION_COOKIE_SAME_SITE || 'lax').toLowerCase();
+if (!['lax', 'strict', 'none'].includes(sessionCookieSameSite))
+  throw new Error('SESSION_COOKIE_SAME_SITE must be lax, strict or none');
+
 export const env = Object.freeze({
+  sessionCookieSameSite: sessionCookieSameSite as 'lax' | 'strict' | 'none',
   nodeEnv: process.env.NODE_ENV || 'development',
-  port: toPositiveInteger('PORT', 3715),
+  port: toPositiveInteger('PORT', 3615),
   trustProxy: toPositiveInteger('TRUST_PROXY', 1),
   bodyLimit: process.env.BODY_LIMIT || '10mb',
   corsOrigins: toList(process.env.CORS_ORIGINS, ['*']),

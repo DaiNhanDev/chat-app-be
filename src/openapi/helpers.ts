@@ -82,7 +82,9 @@ export const operation = (
   summary: string,
   options: {
     auth?: boolean;
-    securityScheme?: string;
+    operationId?: string;
+    conflict?: string;
+    notFound?: string;
     params?: OpenAPISpec[];
     body?: OpenAPISpec;
     result?: OpenAPISpec;
@@ -93,16 +95,21 @@ export const operation = (
   const value: OpenAPISpec = {
     tags: [tag],
     summary,
+    ...(options.operationId ? { operationId: options.operationId } : {}),
     ...(options.description ? { description: options.description } : {}),
     ...(options.params ? { parameters: options.params } : {}),
     ...(options.body ? { requestBody: body(options.body) } : {}),
-    responses: responses(options.result, options.statusCode),
+    responses: {
+      ...responses(options.result, options.statusCode),
+      ...(options.notFound ? { '404': reply(options.notFound, ref('ErrorResponse')) } : {}),
+      ...(options.conflict ? { '409': reply(options.conflict, ref('ErrorResponse')) } : {}),
+    },
   };
 
   if (!options.auth) return value;
 
   return {
-    security: [{ [options.securityScheme || 'bearerAuth']: [] }],
+    security: [{ bearerAuth: [] }],
     ...value,
     responses: {
       ...(value.responses as OpenAPISpec),

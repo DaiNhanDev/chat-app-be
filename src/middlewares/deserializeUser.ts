@@ -36,6 +36,8 @@ const isAuthenticatedUser = (value: unknown): value is AuthenticatedUser => {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Record<string, unknown>;
   return (
+    // Tokens issued before tokenUse was introduced keep their signed expiry.
+    (candidate.tokenUse === undefined || candidate.tokenUse === 'access') &&
     typeof candidate.email === 'string' &&
     typeof candidate.userId === 'string' &&
     isRole(candidate.role)
