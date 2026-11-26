@@ -1,5 +1,5 @@
 import { UserModel } from 'src/models';
-import { ROLE } from 'src/constants';
+import { isRole, ROLE, RoleType } from 'src/constants';
 import { User } from 'src/types';
 import { FilterQuery } from 'mongoose';
 import { CreateUserInput, PublicUser, UpdateUserInput, UserListQuery } from 'src/types/user';
@@ -56,6 +56,24 @@ class UserRepository extends BaseRepositoryAbstract<User> {
       .findOne({ email, ...active })
       .select('_id name email role +firebaseUid')
       .lean();
+  }
+
+  async chatRoles(uids: string[]): Promise<Map<string, RoleType>> {
+    const wanted = new Set(uids);
+    const ids = uids.filter((uid) => /^[a-f\d]{24}$/i.test(uid));
+    const users = await this.entity
+      .find({
+        ...active,
+        $or: [{ firebaseUid: { $in: uids } }, { _id: { $in: ids } }],
+      })
+      .select('_id role +firebaseUid')
+      .lean();
+    const roles = new Map<string, RoleType>();
+    for (const user of users) {
+      const uid = user.firebaseUid || String(user._id);
+      if (wanted.has(uid) && isRole(user.role)) roles.set(uid, user.role);
+    }
+    return roles;
   }
 
   async chatUidOwnedByOther(uid: string, accountId: string): Promise<boolean> {

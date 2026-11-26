@@ -1,6 +1,6 @@
 import { BatchResponse, MulticastMessage } from 'firebase-admin/messaging';
 import { PushDeviceRepository } from 'src/repositories/push-device.repository';
-import { PushContext } from 'src/types/push';
+import { PushContext, PushTarget } from 'src/types/push';
 import { logger } from 'src/utils/logger';
 
 export interface PushSender {
@@ -10,6 +10,12 @@ export interface PushSender {
 export interface PushOptions {
   baseUrl: string;
   timeoutMs: number;
+  unreadSummary?: (uid: string) => Promise<UnreadSummary>;
+}
+
+interface UnreadSummary {
+  unreadCount: number;
+  unreadUsers?: number;
 }
 
 const invalidTokenCodes = new Set([
@@ -81,11 +87,39 @@ export class PushService {
     const recipients = [...new Set(context.recipientIds.filter((uid) => uid !== context.senderId))];
     if (!recipients.length) return;
     const candidates = await this.devices.targets(recipients);
-    if (signal.aborted) return;
+    const owners = new Map<string, PushTarget[]>();
+    for (const device of candidates) {
+      const group = owners.get(device.ownerUid);
+      if (group) group.push(device);
+      else owners.set(device.ownerUid, [device]);
+    }
+    for (const [owner, devices] of owners) {
+      if (signal.aborted) return;
+      const unread = await this.options.unreadSummary?.(owner).catch((): undefined => undefined);
+      if (unread?.unreadCount === 0) continue;
+      await this.sendToOwner(context, owner, devices, unread, link, signal);
+    }
+  }
+
+  private async sendToOwner(
+    context: PushContext,
+    owner: string,
+    candidates: PushTarget[],
+    unread: UnreadSummary | undefined,
+    link: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const unreadMessage = unread
+      ? `Bạn có ${unread.unreadCount} tin nhắn chưa đọc`
+      : 'Bạn có tin nhắn mới';
+    const body =
+      unread?.unreadUsers === undefined
+        ? unreadMessage
+        : `${unreadMessage}. ${unread.unreadUsers} USER chưa đọc tin nhắn của bạn.`;
     for (let offset = 0; offset < candidates.length; offset += 500) {
       // Recheck ownership near dispatch, especially after account switching.
       const latest = new Map(
-        (await this.devices.targets(recipients)).map((device) => [device.deviceId, device]),
+        (await this.devices.targets([owner])).map((device) => [device.deviceId, device]),
       );
       const batch = candidates
         .slice(offset, offset + 500)
@@ -94,8 +128,13 @@ export class PushService {
       if (!batch.length) continue;
       const result = await this.sender().sendEachForMulticast({
         tokens: batch.map((device) => device.token),
-        notification: { title: 'Chat', body: 'Bạn có tin nhắn mới' },
-        data: { conversationId: context.conversationId, messageId: context.messageId },
+        notification: { title: 'Chat', body },
+        data: {
+          conversationId: context.conversationId,
+          messageId: context.messageId,
+          ...(unread ? { unreadCount: String(unread.unreadCount) } : {}),
+          ...(unread?.unreadUsers === undefined ? {} : { unreadUsers: String(unread.unreadUsers) }),
+        },
         webpush: {
           fcmOptions: { link },
           notification: { tag: `chat-${context.conversationId}` },

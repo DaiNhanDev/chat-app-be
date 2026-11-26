@@ -162,14 +162,16 @@ Production yêu cầu cấu hình `MONGODB_URI` và `JWT_SECRET`. Các tùy ch�
 
 BE quản lý room/thành viên, ghi tin, cập nhật preview/index và gửi FCM. FE chỉ đọc `rooms/{id}/messages` bằng RTDB listener. Mọi REST API cần xác thực đều dùng **JWT server**; Firebase ID token không được dùng làm Bearer token cho REST.
 
-| Method       | Path sau /api/v1            | Body / data                                                          |
-| ------------ | --------------------------- | -------------------------------------------------------------------- |
-| POST         | /auth/firebase-token        | JWT, không body → `{ customToken }`, claim chatRead=true             |
-| GET          | /chat/people?email=…        | JWT → `{ person: { id, displayName }                                 | null }` |
-| POST         | /conversations              | JWT ADMIN, `{ participantIds: [userId] }` → `{ conversation }`       |
-| GET          | /conversations              | JWT → `{ conversations }` của tài khoản hiện tại                     |
-| POST         | /conversations/:id/messages | JWT, `{ clientMessageId, text }` → `{ message, duplicate }`          |
-| PUT / DELETE | /push/devices/:id           | JWT; PUT `{ token }`, DELETE không body → `{ deviceId, registered }` |
+| Method       | Path sau /api/v1                       | Body / data                                                          |
+| ------------ | -------------------------------------- | -------------------------------------------------------------------- |
+| POST         | /auth/firebase-token                   | JWT, không body → `{ customToken }`, claim chatRead=true             |
+| GET          | /chat/people?email=…                   | JWT → `{ person: { id, displayName }                                 | null }` |
+| POST         | /conversations                         | JWT ADMIN, `{ participantIds: [userId] }` → `{ conversation }`       |
+| GET          | /conversations                         | JWT → `{ conversations }` của tài khoản hiện tại                     |
+| POST         | /conversations/:id/messages            | JWT, `{ clientMessageId, text }` → `{ message, duplicate }`          |
+| DELETE       | /conversations/:id/messages/:messageId | JWT của người gửi → `{ messageId, deleted: true }`                   |
+| PUT          | /conversations/:id/read                | JWT, `{ throughMessageId }` → bộ đếm của phòng                       |
+| PUT / DELETE | /push/devices/:id                      | JWT; PUT `{ token }`, DELETE không body → `{ deviceId, registered }` |
 
 Tìm người trả Mongo ID dùng trong participantIds. BE kiểm tra lại tài khoản đang hoạt động cho từng request, tự thêm người tạo vào room và ánh xạ UID chat. Room trả `id, title, memberIds, members, createdBy, createdAt, updatedAt, lastMessage, lastMessageId, lastSenderId`; memberIds/senderId là UID chat do BE quản lý.
 
@@ -211,6 +213,25 @@ sequenceDiagram
 ```
 
 Gửi tin trim text 1–4000 ký tự, transaction kiểm tra membership và idempotency. Lần đầu 201; cùng room/người gửi/ID/nội dung trả 200 duplicate=true, không gửi push lại. Cùng ID khác nội dung/người gửi trả 409 IDEMPOTENCY_CONFLICT. FCM best-effort sau commit; response thành công xác nhận lưu tin, không xác nhận người nhận đã đọc.
+
+### Xóa tin nhắn
+
+Chỉ người gửi còn là thành viên phòng được gọi `DELETE /api/v1/conversations/{conversationId}/messages/{messageId}` bằng access token của server. Dùng `message.id` đã nhận từ RTDB hoặc API gửi tin. Request chỉ cần path và header xác thực.
+
+```sh
+curl -X DELETE "http://localhost:3615/api/v1/conversations/$CONVERSATION_ID/messages/$MESSAGE_ID" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+Thành công trả `200` với `data: { messageId, deleted: true }`. Gọi lại bằng cùng tài khoản trả cùng kết quả. Thành viên xóa tin của người khác hoặc người ngoài phòng nhận `403`. Phòng hoặc tin không tồn tại trả `404`.
+
+BE gỡ tin khỏi RTDB cho cả phòng. Nếu xóa tin đang hiển thị trong phần xem trước, BE dùng tin mới nhất còn lại hoặc để trống khi phòng hết tin. FE nhận danh sách tin mới qua RTDB listener và có thể gọi lại `GET /conversations` để làm mới phần xem trước. Nếu FE gửi lại một `clientMessageId` đã bị xóa, API gửi tin trả `409 MESSAGE_DELETED`. [Swagger xóa tin nhắn](http://localhost:3615/docs/#/Chat/deleteMessage)
+
+### Tin chưa đọc
+
+Mỗi phòng trong `GET /conversations` có `unreadCount` của chính tài khoản đang đăng nhập. Trong màn hình chat, FE gọi `PUT /conversations/{conversationId}/read` với `throughMessageId` của tin mới nhất đã hiển thị. Response gồm `conversationId`, `unreadCount`, `unreadRecipients` và `unreadRevision`. Dùng `unreadRevision` để tránh ghi đè bộ đếm bằng phản hồi cũ khi có thao tác đồng thời. Backend giữ lại các tin đến sau mốc này và giảm số đếm nếu người gửi xóa một tin chưa đọc.
+
+Khi app chuyển xuống nền hoặc đóng, FCM hiển thị tổng số tin chưa đọc của người nhận trên các phòng tại thời điểm gửi thông báo. Người nhận cần đã bật push trên thiết bị. Thông báo cho ADMIN còn kèm số USER đang có tin chưa đọc trong phòng 1–1. Hai số phản ánh trạng thái tại lúc gửi push. Số đếm bắt đầu với các tin gửi sau khi triển khai tính năng. [Swagger đánh dấu đã đọc](http://localhost:3615/docs/#/Chat/markConversationRead)
 
 ### Phiên đọc Firebase và danh tính
 

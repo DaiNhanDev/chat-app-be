@@ -24,7 +24,12 @@ export const chatSchemas = {
   conversationParams: Joi.object({
     conversationId: key.max(768),
   }),
+  messageParams: Joi.object({
+    conversationId: key.max(768),
+    messageId: key,
+  }),
   deviceParams: Joi.object({ deviceId: key }),
+  read: Joi.object({ throughMessageId: key }),
   message: Joi.object({
     text: Joi.string().trim().min(1).max(4000).required(),
     clientMessageId: key,

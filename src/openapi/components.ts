@@ -25,6 +25,9 @@ export const components = {
     Conversation: {
       type: 'object',
       required: [
+        'unreadCount',
+        'unreadRecipients',
+        'unreadRevision',
         'id',
         'title',
         'memberIds',
@@ -37,6 +40,13 @@ export const components = {
         'lastSenderId',
       ],
       properties: {
+        unreadCount: { type: 'integer', minimum: 0, description: 'Số tin chưa đọc của người gọi.' },
+        unreadRecipients: {
+          type: 'integer',
+          minimum: 0,
+          description: 'Số thành viên khác trong phòng còn tin chưa đọc.',
+        },
+        unreadRevision: { type: 'integer', minimum: 0, description: 'Phiên bản bộ đếm của phòng.' },
         id: { type: 'string' },
         title: { type: 'string' },
         memberIds: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 10 },

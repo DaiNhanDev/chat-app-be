@@ -4,6 +4,7 @@ import { ChatActor, Conversation, ConversationInfo } from 'src/types/chat-accoun
 import { ERROR_MESSAGE } from 'src/constants/error.message';
 import { ConflictRequestError } from 'src/utils/error.response';
 import { isFirebaseKey } from 'src/utils/firebase-key';
+import { roomReadSummary } from 'src/utils/chat-read-state';
 
 const memberIds = (info: ConversationInfo): string[] =>
   Object.entries(info.memberIds || {})
@@ -14,7 +15,7 @@ const memberIds = (info: ConversationInfo): string[] =>
 const sameMembers = (info: ConversationInfo, expected: string[]): boolean =>
   memberIds(info).join('\0') === expected.join('\0');
 
-const toConversation = (id: string, info: ConversationInfo): Conversation => ({
+const toConversation = (id: string, info: ConversationInfo, uid: string): Conversation => ({
   id,
   title: info.title,
   memberIds: memberIds(info),
@@ -25,6 +26,7 @@ const toConversation = (id: string, info: ConversationInfo): Conversation => ({
   lastMessage: info.lastMessage,
   lastMessageId: info.lastMessageId,
   lastSenderId: info.lastSenderId,
+  ...roomReadSummary(info, uid),
 });
 
 export class ConversationRepository {
@@ -48,7 +50,7 @@ export class ConversationRepository {
           info.memberIds[uid] !== true
         )
           return null;
-        return toConversation(id, info);
+        return toConversation(id, info, uid);
       }),
     );
     return entries
@@ -71,7 +73,9 @@ export class ConversationRepository {
       const room = existing[0]!;
       if (existing.length !== 1 || room.memberIds.join('\0') !== ids.join('\0')) throw conflict();
       await this.index(room.id, ids);
-      return room;
+      const info = (await db.ref(`rooms/${room.id}/info`).get()).val() as ConversationInfo | null;
+      if (!info || !sameMembers(info, ids)) throw conflict();
+      return toConversation(room.id, info, admin.uid);
     }
     // Every admin competes for the same room key for this Mongo account.
     const id = 'user_' + createHash('sha256').update(user.accountId).digest('hex');
@@ -98,7 +102,7 @@ export class ConversationRepository {
     // Only add indexes after create-if-absent. Retrying repairs a failed index write;
     // it never resets an existing room's messages, title, creator or preview.
     await this.index(id, ids);
-    return toConversation(id, result);
+    return toConversation(id, result, admin.uid);
   }
 
   private async index(roomId: string, ids: string[]): Promise<void> {

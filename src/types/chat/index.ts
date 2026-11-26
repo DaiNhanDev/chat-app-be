@@ -13,14 +13,27 @@ export interface StoredMessage {
   senderId: string;
   text: string;
   createdAt: number;
+  sequence?: number;
+}
+
+export interface RoomReadState {
+  through: number;
+  unreadCount: number;
+}
+
+export interface RoomReadInfo {
+  memberIds: Record<string, boolean>;
+  readState?: Record<string, RoomReadState>;
+  unreadRevision?: number;
 }
 
 export interface ChatRoom {
-  info: {
-    memberIds: Record<string, boolean>;
+  info: RoomReadInfo & {
+    messageSequence?: number;
     [field: string]: unknown;
   };
   messages?: Record<string, StoredMessage>;
+  deletedMessages?: Record<string, string>;
   [field: string]: unknown;
 }
 

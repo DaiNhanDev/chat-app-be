@@ -18,6 +18,10 @@ firebaseUid là mapping private do quản trị viên migration gán, unique spa
 
 POST conversations/:id/messages nhận `{ clientMessageId, text }`. Text trim 1–4000 ký tự, ID tối đa 128 ký tự và là RTDB key hợp lệ. Transaction kiểm tra room/membership, chỉ thêm tin chưa có, cập nhật preview trong cùng commit. Response `{ message: { id, senderId, text, createdAt }, duplicate }`, 201 mới/200 retry; 409 khi ID dùng cho nội dung/người gửi khác.
 
+`DELETE /conversations/{conversationId}/messages/{messageId}` dùng JWT server và chỉ dành cho người gửi còn là thành viên phòng. Backend gỡ tin khỏi nhánh `messages` và cập nhật preview trong cùng transaction. Gọi lại DELETE bằng chính người gửi trả `200` với `{ messageId, deleted: true }`. POST lại ID đã xóa trả `409 MESSAGE_DELETED`. RTDB listener nhận danh sách tin sau khi xóa. FE gọi lại `GET /conversations` nếu cần làm mới preview.
+
+`GET /conversations` trả `unreadCount` theo từng phòng của người gọi. Khi người dùng đang xem cuối phòng ở tab hiển thị, FE lấy tin có `sequence` cao nhất đã nhận và gửi ID đó trong `throughMessageId` tới `PUT /conversations/{conversationId}/read`. BE ghi mốc đọc bằng JWT và giữ nguyên số tin đến sau mốc. Các tin có từ trước khi có trường `sequence` vẫn hiển thị trong lịch sử. Bộ đếm chỉ tính tin được gửi sau khi bật tính năng.
+
 Tin commit trước push. Lỗi FCM không rollback tin hoặc đổi kết quả gửi thành thất bại. Retry duplicate không gửi push lại. UI ghép theo message ID, giữ draft/ID khi kết quả chưa chắc chắn. Chi tiết transaction và push registry được giữ tại repositories/chat.repository.ts, push-device.repository.ts và services/push.service.ts.
 
 ## Quyền truy cập RTDB
@@ -30,7 +34,7 @@ Rules mục tiêu trong ../chatapp/database.rules.json deny mọi ghi client, ch
 
 PUT push/devices/:id nhận FCM registration token trong body, JWT server trong header; DELETE không body. Ownership registry dùng UID chat đã ánh xạ, không tin UID client gửi. Response chỉ có deviceId/registered, không trả token.
 
-FCM SDK ở FE hỏi quyền chủ động, dùng một worker sw.js. Payload notification chỉ hiển thị một lần, click về cùng origin /?conversationId=…. AuthGuard giữ room qua login; FE chỉ gắn listener sau khi xác minh room có trong danh sách BE.
+FCM SDK ở FE hỏi quyền chủ động, dùng một worker sw.js. Nội dung thông báo hiển thị tổng số tin chưa đọc của người nhận ở thời điểm BE gửi, kể cả khi tab đang ở nền hoặc đã đóng. Worker dùng `data.unreadCount` cho huy hiệu trên biểu tượng PWA khi nền tảng hỗ trợ. Thông báo cho ADMIN còn kèm số USER đang có tin chưa đọc trong phòng 1–1. Hai số phản ánh trạng thái tại lúc gửi push. Số trên biểu tượng được cập nhật ở lần nhận push hoặc đồng bộ tiếp theo. Click thông báo về cùng origin /?conversationId=…. AuthGuard giữ room qua login và FE gắn listener sau khi xác minh room từ BE.
 
 Cấu hình FIREBASE_PROJECT_ID, FIREBASE_DATABASE_URL, GOOGLE_APPLICATION_CREDENTIALS/ADC và PWA_BASE_URL tại BE; Web App/VAPID ở FE cùng project. Không để service account hoặc JWT vào source/VITE_*.
 

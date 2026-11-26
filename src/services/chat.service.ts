@@ -5,7 +5,7 @@ import { logger } from 'src/utils/logger';
 
 export class ChatService {
   constructor(
-    private readonly repository: Pick<ChatRepository, 'save'>,
+    private readonly repository: Pick<ChatRepository, 'save' | 'deleteMessage' | 'markRead'>,
     private readonly push: Pick<PushService, 'notify'>,
   ) {}
 
@@ -27,5 +27,14 @@ export class ChatService {
       }
     }
     return { message: saved.message, duplicate: saved.duplicate };
+  }
+
+  async deleteMessage(conversationId: string, uid: string, messageId: string) {
+    await this.repository.deleteMessage(conversationId, uid, messageId);
+    return { messageId, deleted: true };
+  }
+
+  markRead(conversationId: string, uid: string, messageId: string) {
+    return this.repository.markRead(conversationId, uid, messageId);
   }
 }

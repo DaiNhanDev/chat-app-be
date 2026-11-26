@@ -15,7 +15,7 @@ import { chatSchemas } from 'src/validators/chat.validator';
 import { catchError } from 'src/utils/handleError';
 
 export const createChatRouter = (dependencies: {
-  chat: Pick<ChatService, 'send'>;
+  chat: Pick<ChatService, 'send' | 'deleteMessage' | 'markRead'>;
   rooms: ConversationService;
   devices: Pick<PushDeviceRepository, 'register' | 'unregister'>;
 }) => {
@@ -41,6 +41,17 @@ export const createChatRouter = (dependencies: {
     validateRequest(chatSchemas.conversationParams, 'params'),
     validateRequest(chatSchemas.message),
     catchError(messages.send),
+  );
+  router.delete(
+    '/conversations/:conversationId/messages/:messageId',
+    validateRequest(chatSchemas.messageParams, 'params'),
+    catchError(messages.deleteMessage),
+  );
+  router.put(
+    '/conversations/:conversationId/read',
+    validateRequest(chatSchemas.conversationParams, 'params'),
+    validateRequest(chatSchemas.read),
+    catchError(messages.markRead),
   );
   router.put(
     '/push/devices/:deviceId',

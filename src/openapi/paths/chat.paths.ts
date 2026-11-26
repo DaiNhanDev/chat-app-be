@@ -8,6 +8,7 @@ const message = {
     senderId: { type: 'string', description: 'UID chat do BE quản lý' },
     text: { type: 'string' },
     createdAt: { type: 'integer', description: 'RTDB server timestamp (milliseconds)' },
+    sequence: { type: 'integer', minimum: 1, description: 'Thứ tự ghi do server cấp cho tin mới.' },
   },
 };
 const savedMessage = {
@@ -101,7 +102,7 @@ export const createChatPaths = () => {
           result: savedMessage,
           statusCode: 201,
           description:
-            'JWT server; BE xác minh tài khoản và UID chat. Retry cùng room/người gửi/ID/nội dung trả 200, không gửi push lại; khác nội dung/người gửi trả 409.',
+            'JWT server. Gửi lại cùng phòng, người gửi, ID và nội dung trả 200. ID dùng cho tin khác hoặc tin đã bị xóa trả 409.',
         }),
         responses: {
           ...operation('Chat', '', { ...auth, result: savedMessage, statusCode: 201 }).responses,
@@ -110,9 +111,59 @@ export const createChatPaths = () => {
             description: 'Tin đã tồn tại; duplicate=true, không gửi push lại',
           },
           '404': { description: 'Không tìm thấy cuộc trò chuyện' },
-          '409': { description: 'clientMessageId đã được dùng cho tin nhắn khác' },
+          '409': {
+            description:
+              'IDEMPOTENCY_CONFLICT khi ID đã dùng cho tin khác. MESSAGE_DELETED khi ID thuộc tin đã xóa.',
+            content: { 'application/json': { schema: ref('ErrorResponse') } },
+          },
         },
       },
+    },
+    '/conversations/{conversationId}/messages/{messageId}': {
+      delete: operation('Chat', 'Xóa tin nhắn đã gửi', {
+        ...auth,
+        operationId: 'deleteMessage',
+        params: [id('conversationId'), id('messageId')],
+        description: [
+          'Dùng JWT server và message.id lấy từ dữ liệu tin nhắn. Thành viên phòng chỉ được xóa tin do mình gửi. Người gọi khác nhận 403.',
+          'Trả 200 kể cả khi người gửi gọi lại với cùng ID. Tin bị gỡ khỏi nhánh messages và phần xem trước được cập nhật nếu cần. FE nhận thay đổi qua RTDB listener. Gọi GET /conversations để cập nhật phần xem trước.',
+        ].join('\n\n'),
+        result: {
+          type: 'object',
+          required: ['messageId', 'deleted'],
+          properties: {
+            messageId: { type: 'string', maxLength: 128 },
+            deleted: { type: 'boolean', enum: [true] },
+          },
+        },
+        notFound: 'Không tìm thấy phòng hoặc tin nhắn.',
+      }),
+    },
+    '/conversations/{conversationId}/read': {
+      put: operation('Chat', 'Đánh dấu đã đọc đến một tin nhắn', {
+        ...auth,
+        operationId: 'markConversationRead',
+        params: [id('conversationId')],
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['throughMessageId'],
+          properties: { throughMessageId: { type: 'string', maxLength: 128 } },
+        },
+        result: {
+          type: 'object',
+          required: ['conversationId', 'unreadCount', 'unreadRecipients', 'unreadRevision'],
+          properties: {
+            conversationId: { type: 'string' },
+            unreadCount: { type: 'integer', minimum: 0 },
+            unreadRecipients: { type: 'integer', minimum: 0 },
+            unreadRevision: { type: 'integer', minimum: 0 },
+          },
+        },
+        description:
+          'Chỉ thành viên phòng. Ghi mốc đã đọc của tài khoản đang đăng nhập đến tin được chỉ định và giữ các tin đến sau mốc.',
+        notFound: 'Không tìm thấy phòng hoặc tin nhắn.',
+      }),
     },
     '/push/devices/{deviceId}': {
       put: operation('Push', 'Đăng ký hoặc cập nhật thiết bị', {
