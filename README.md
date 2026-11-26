@@ -29,8 +29,8 @@ GitHub Actions chạy `npm ci`, `npm run check` và `npm run build` trên Node.j
 
 **Chuẩn bị máy chủ một lần**
 
-1. Cài Node.js 22, npm, PM2, Bash, curl và lsof. Đảm bảo tài khoản SSH chạy được `node -v`, `npm -v` và `pm2 -v` cả trong phiên SSH không tương tác.
-2. Tạo `/var/www/chat-be/shared` và cấp quyền ghi `/var/www/chat-be` cho tài khoản triển khai. Pipeline quản lý symlink `current`, thư mục `releases` và tiến trình PM2 `chat-be`. Nếu đang chạy ứng dụng cùng tên bằng cách khác, lên lịch chuyển giao tiến trình trước lần deploy đầu tiên.
+1. Cài Node.js 22 trở lên, npm, PM2, Bash và curl cho tài khoản SSH. Nếu dùng nvm và lệnh chưa có trong PATH của phiên SSH không tương tác, script thử nạp nvm từ thư mục của tài khoản đó. Trên Linux, script kiểm tra tiến trình PM2 qua `/proc`. Khi môi trường không có `/proc`, script dùng `lsof`.
+2. Cấp quyền ghi `/var/www/chat-be` cho tài khoản triển khai hoặc quyền tạo thư mục này trong `/var/www`. Pipeline tạo `releases`, quản lý symlink `current` và tiến trình PM2 `chat-be`. Nếu đang chạy ứng dụng cùng tên bằng cách khác, lên lịch chuyển giao tiến trình trước lần deploy đầu tiên.
 3. Nếu dùng service account JSON, lưu file trên máy chủ, ví dụ `/var/www/chat-be/shared/firebase-adminsdk.json`. Cấp quyền đọc cho tài khoản PM2 và điền đường dẫn tuyệt đối đó vào biến `GOOGLE_APPLICATION_CREDENTIALS`. Nếu máy chủ đã được cấp Application Default Credentials (ADC), để biến này trống.
 4. Trỏ reverse proxy tới cổng trong biến `PORT` (mặc định `3615`). Cấu hình `pm2 startup` cho tài khoản triển khai nếu PM2 cần tự khởi động cùng máy chủ. Workflow chạy `pm2 save` sau khi kiểm tra HTTP thành công.
 
@@ -72,6 +72,8 @@ Khai báo các biến ứng dụng dưới đây cùng với cấu hình SSH. Wo
 Khi chuyển từ cấu hình `shared/.env` sang workflow này, nhập giá trị production hiện tại vào GitHub trước lần deploy đầu tiên. Cấu hình VAPID và các biến `VITE_*` được thiết lập trong CI/CD của frontend.
 
 Script cài dependency production, kiểm tra cấu hình Firebase, URL PWA và kết nối MongoDB trước khi chuyển phiên bản. Sau đó, script xác nhận PM2 chạy đúng release và gọi được `/docs/swagger.json` qua loopback. Nếu khởi động hoặc kiểm tra HTTP thất bại, workflow báo lỗi và quay lại release trước cùng file cấu hình của release đó. Máy chủ giữ bản hiện tại, bản ngay trước đó và dọn các release cũ hơn một tuần. [Script triển khai](deploy/activate.sh).
+
+Khi job deploy thất bại, xem dòng lỗi sau `SSH connected` trong GitHub Actions. Các bước tạo thư mục, giải nén, kiểm tra công cụ, cài dependency và kiểm tra HTTP đều có tên riêng trong log. Nếu PM2 khởi động nhưng API chưa trả lời, xem log trên máy chủ bằng `pm2 logs chat-be --lines 50 --nostream`.
 
 ### Nginx cho `chat-app-api.ncjscs.com`
 

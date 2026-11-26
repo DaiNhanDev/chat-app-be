@@ -92,17 +92,21 @@ jobs:
           trap 'rm -rf -- "$staging"' EXIT
           mkdir "$staging/release"
           tar -xzf chat-be.tar.gz -C "$staging/release"
+          echo 'Preparing production configuration'
           (cd "$staging/release" && node deploy/write-env.cjs)
           release="$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          echo "Uploading release $release over SSH"
           tar -C "$staging/release" -czf - . |
             sshpass -e ssh -T -o StrictHostKeyChecking=accept-new \
             -o ConnectTimeout=15 -p "$SERVER_PORT" -l "$SERVER_USER" -- "$SERVER_IP" "
               set -eu
               umask 077
+              echo 'SSH connected. Preparing /var/www/chat-be/releases'
+              mkdir -p /var/www/chat-be/releases
               cd /var/www/chat-be
-              mkdir -p releases
               mkdir releases/$release
               cd releases/$release
+              echo 'Extracting release'
               tar -xzf -
               exec bash deploy/activate.sh
             "

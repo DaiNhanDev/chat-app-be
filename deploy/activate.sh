@@ -6,27 +6,67 @@ release=$(pwd -P)
 root=$(dirname "$(dirname "$release")")
 current="$root/current"
 previous=''
-command -v pm2 >/dev/null
-command -v lsof >/dev/null
-if [[ -L "$current" ]]; then
-  previous=$(cd "$current" && pwd -P)
-elif [[ -e "$current" ]] || pm2 describe chat-be >/dev/null 2>&1; then
-  echo 'First deployment requires an unused current path and PM2 app name chat-be.' >&2
+
+fail() {
+  printf 'Deploy error: %s\n' "$*" >&2
   exit 1
+}
+
+echo 'Checking server prerequisites'
+if ! command -v node >/dev/null || ! command -v npm >/dev/null || ! command -v pm2 >/dev/null; then
+  nvm_script="${NVM_DIR:-$HOME/.nvm}/nvm.sh"
+  if [[ -s "$nvm_script" ]]; then
+    echo 'Loading Node.js from nvm for the SSH user'
+    set +u
+    source "$nvm_script" || fail 'Could not load nvm for the deploy user'
+    set -u
+  fi
+fi
+for tool in node npm pm2 curl; do
+  command -v "$tool" >/dev/null || fail "$tool is not available in the deploy user's SSH PATH"
+done
+if ! node -e 'process.exit(Number(process.versions.node.split(".")[0]) < 22 ? 1 : 0)'; then
+  fail 'Node.js 22 or newer is required for chat-be'
+fi
+if [[ -d /proc/self ]]; then
+  process_cwd() { readlink "/proc/$1/cwd"; }
+else
+  command -v lsof >/dev/null || fail 'lsof is required to verify PM2 when /proc is unavailable'
+  process_cwd() { lsof -a -p "$1" -d cwd -Fn | sed -n 's/^n//p'; }
 fi
 
-test -f .env && test ! -L .env
+if [[ -L "$current" ]]; then
+  previous=$(cd "$current" && pwd -P) || fail 'current points to an unavailable release'
+elif [[ -e "$current" ]] || pm2 describe chat-be >/dev/null 2>&1; then
+  fail 'First deployment requires an unused current path and PM2 app name chat-be'
+fi
+
+[[ -f .env && ! -L .env ]] || fail 'The release is missing its generated .env file'
+[[ -f dist/server.js ]] || fail 'The release is missing dist/server.js'
 chmod 600 .env
 export NODE_ENV=production
+echo 'Installing production dependencies'
 npm ci --omit=dev --no-audit --no-fund
 
 # Load the same file that PM2 will use for this release.
+echo 'Checking runtime configuration and MongoDB'
 port=$(DOTENV_CONFIG_PATH="$release/.env" DOTENV_CONFIG_OVERRIDE=true node <<'NODE'
+const { accessSync, constants } = require('node:fs');
 const { env } = require('./dist/configs/env.config');
 const { conversationLink } = require('./dist/services/push.service');
 const { firebaseDatabase } = require('./dist/configs/firebase.config');
 const { MongoClient } = require('mongoose').mongo;
 (async () => {
+  const credentials = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim();
+  if (credentials) {
+    try {
+      accessSync(credentials, constants.R_OK);
+    } catch {
+      console.error('GOOGLE_APPLICATION_CREDENTIALS is not readable by the deploy user');
+      process.exitCode = 1;
+      return;
+    }
+  }
   try {
     conversationLink(env.pwaBaseUrl, 'check');
     firebaseDatabase();
@@ -60,16 +100,19 @@ switch_to() {
 
 restart_and_check() {
   local expected=$1 expected_port=$2 pid i
+  echo "Starting PM2 and checking HTTP on port $expected_port"
   CHAT_BE_CWD="$current" pm2 startOrRestart "$current/ecosystem.config.js" --only chat-be --update-env || return 1
   for ((i = 0; i < 20; i++)); do
     pid=$(pm2 pid chat-be) || return 1
     if [[ "$pid" =~ ^[1-9][0-9]*$ ]] &&
-      lsof -a -p "$pid" -d cwd -Fn | grep -Fxq "n$expected" &&
-      curl -fsS --max-time 2 "http://127.0.0.1:$expected_port/docs/swagger.json" -o /dev/null; then
+      [[ "$(process_cwd "$pid")" == "$expected" ]] &&
+      curl -fs --max-time 2 "http://127.0.0.1:$expected_port/docs/swagger.json" -o /dev/null; then
       return 0
     fi
     sleep 1
   done
+  printf 'Deploy error: PM2 did not serve /docs/swagger.json from the expected release on port %s\n' "$expected_port" >&2
+  printf 'Inspect server logs with: pm2 logs chat-be --lines 50 --nostream\n' >&2
   return 1
 }
 
