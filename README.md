@@ -73,7 +73,7 @@ Khi chuyển từ cấu hình `shared/.env` sang workflow này, nhập giá tr�
 
 Script cài dependency production, kiểm tra cấu hình Firebase, URL PWA và kết nối MongoDB trước khi chuyển phiên bản. Sau đó, script xác nhận PM2 chạy đúng release và gọi được `/docs/swagger.json` qua loopback. Nếu khởi động hoặc kiểm tra HTTP thất bại, workflow báo lỗi và quay lại release trước cùng file cấu hình của release đó. Máy chủ giữ bản hiện tại, bản ngay trước đó và dọn các release cũ hơn một tuần. [Script triển khai](deploy/activate.sh).
 
-Khi job deploy thất bại, xem dòng lỗi sau `SSH connected` trong GitHub Actions. Các bước tạo thư mục, giải nén, kiểm tra công cụ, cài dependency và kiểm tra HTTP đều có tên riêng trong log. Nếu PM2 khởi động nhưng API chưa trả lời, xem log trên máy chủ bằng `pm2 logs chat-be --lines 50 --nostream`.
+Khi job deploy thất bại, xem dòng `Deploy error:` trong GitHub Actions. Bước xác minh đọc PID của `chat-be` kể cả khi PM2 in cảnh báo lệch phiên bản, rồi kiểm tra thư mục release và mã HTTP của `/docs/swagger.json`. Nếu ứng dụng chưa trả lời, xem log trên máy chủ bằng `pm2 logs chat-be --lines 50 --nostream`. Lên lịch riêng nếu cần cập nhật daemon PM2 dùng chung.
 
 ### Nginx cho `chat-app-api.ncjscs.com`
 

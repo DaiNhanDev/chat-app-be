@@ -99,19 +99,34 @@ switch_to() {
 }
 
 restart_and_check() {
-  local expected=$1 expected_port=$2 pid i
+  local expected=$1 expected_port=$2 pid cwd http_status reason i
   echo "Starting PM2 and checking HTTP on port $expected_port"
-  CHAT_BE_CWD="$current" pm2 startOrRestart "$current/ecosystem.config.js" --only chat-be --update-env || return 1
+  if ! CHAT_BE_CWD="$current" pm2 startOrRestart "$current/ecosystem.config.js" --only chat-be --update-env; then
+    echo 'Deploy error: PM2 could not start chat-be' >&2
+    return 1
+  fi
   for ((i = 0; i < 20; i++)); do
-    pid=$(pm2 pid chat-be) || return 1
-    if [[ "$pid" =~ ^[1-9][0-9]*$ ]] &&
-      [[ "$(process_cwd "$pid")" == "$expected" ]] &&
-      curl -fs --max-time 2 "http://127.0.0.1:$expected_port/docs/swagger.json" -o /dev/null; then
+    # PM2 can print daemon version warnings to stdout alongside the PID.
+    if ! pid=$(pm2 pid chat-be | awk 'NF == 1 && $1 ~ /^[1-9][0-9]*$/ { print $1 }'); then
+      reason='PM2 could not query the chat-be PID'
+    elif [[ ! "$pid" =~ ^[1-9][0-9]*$ ]]; then
+      reason='PM2 did not report one running PID for chat-be'
+    elif ! cwd=$(process_cwd "$pid" 2>/dev/null) || [[ -z "$cwd" ]]; then
+      reason="Cannot read the working directory of PM2 PID $pid"
+    elif [[ "$cwd" != "$expected" ]]; then
+      reason="PM2 PID $pid is running from $cwd instead of $expected"
+    elif ! http_status=$(curl -s --max-time 2 -o /dev/null -w '%{http_code}' \
+      "http://127.0.0.1:$expected_port/docs/swagger.json"); then
+      reason="PM2 PID $pid did not answer HTTP on port $expected_port"
+    elif [[ "$http_status" == 200 ]]; then
+      echo "PM2 PID $pid passed the HTTP check on port $expected_port"
       return 0
+    else
+      reason="GET /docs/swagger.json returned HTTP $http_status on port $expected_port"
     fi
     sleep 1
   done
-  printf 'Deploy error: PM2 did not serve /docs/swagger.json from the expected release on port %s\n' "$expected_port" >&2
+  printf 'Deploy error: %s\n' "$reason" >&2
   printf 'Inspect server logs with: pm2 logs chat-be --lines 50 --nostream\n' >&2
   return 1
 }
