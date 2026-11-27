@@ -99,8 +99,10 @@ class UserService {
     if (id === actorId) {
       throw new BadRequestError(ERROR_MESSAGE.BAD_REQUEST, 'Cannot delete your own admin account');
     }
-    const deleted = await userRepository.deleteById(id);
-    if (!deleted) throw new NotFoundError(ERROR_MESSAGE.USER_NOT_FOUND);
+    const account = await userRepository.beginDeletion(id);
+    if (!account) throw new NotFoundError(ERROR_MESSAGE.USER_NOT_FOUND);
+    await conversationService.deleteForAccount(toChatActor(account));
+    await userRepository.finishDeletion(id);
     return { id, deleted: true };
   }
 }

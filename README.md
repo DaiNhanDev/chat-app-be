@@ -270,13 +270,13 @@ UI cũng đã được kiểm tra trên Firebase cloud thật, không mock API/S
 
 Quản lý tài khoản MongoDB qua JWT server từ `/auth/login`. Tất cả endpoint `/users` yêu cầu ADMIN; backend đọc lại tài khoản hiện tại trong database để kiểm tra quyền, từ chối JWT của tài khoản đã xóa hoặc bị hạ quyền. `/auth/me` tra theo userId nên vẫn hoạt động sau khi đổi email.
 
-| Method | Endpoint            | Chức năng                                 |
-| ------ | ------------------- | ----------------------------------------- |
-| POST   | `/api/v1/users`     | Tạo tài khoản USER hoặc ADMIN             |
-| GET    | `/api/v1/users`     | Danh sách, phân trang, tìm kiếm, lọc role |
-| GET    | `/api/v1/users/:id` | Chi tiết tài khoản                        |
-| PATCH  | `/api/v1/users/:id` | Cập nhật các field được gửi               |
-| DELETE | `/api/v1/users/:id` | Xóa vĩnh viễn tài khoản MongoDB           |
+| Method | Endpoint            | Chức năng                                           |
+| ------ | ------------------- | --------------------------------------------------- |
+| POST   | `/api/v1/users`     | Tạo tài khoản USER hoặc ADMIN                       |
+| GET    | `/api/v1/users`     | Danh sách, phân trang, tìm kiếm, lọc role           |
+| GET    | `/api/v1/users/:id` | Chi tiết tài khoản                                  |
+| PATCH  | `/api/v1/users/:id` | Cập nhật các field được gửi                         |
+| DELETE | `/api/v1/users/:id` | Xóa vĩnh viễn tài khoản và các phòng chat liên quan |
 
 Ví dụ body tạo user:
 
@@ -293,6 +293,10 @@ Ví dụ body tạo user:
 `name`, `email`, `password`, `code` bắt buộc khi tạo. `role` là enum ADMIN/USER, mặc định USER. PATCH nhận một hoặc nhiều trong năm field trên; password mới được bcrypt hash, không có trong response. Không nhận `_id`, `deletedAt`, timestamp hoặc field ngoài schema. ID phải là Mongo ObjectId 24 ký tự hex. Email được chuẩn hóa chữ thường; email/code trùng trả 409. Không được tự xóa tài khoản hoặc tự hạ quyền ADMIN của mình.
 
 Ví dụ list: `GET /api/v1/users?page=1&limit=20&search=nguyen&role=USER`. `limit` tối đa 100; tìm kiếm chuỗi literal theo name/email/code; sắp xếp tài khoản mới nhất trước. Response data: `{ paginate: { page, limit, total, totalPages }, results: [...] }`. Tạo USER trả `{ user, conversation }`. Tạo ADMIN, get và update trả `{ user }`. Delete trả `{ id, deleted: true }`. User không tồn tại trả 404; input sai trả 422; USER truy cập trả 403.
+
+Khi xóa tài khoản, BE xóa tất cả phòng mà tài khoản là thành viên, lịch sử tin nhắn và chỉ mục RTDB của những phòng đó ở danh sách của tất cả thành viên. Tài khoản của các thành viên còn lại vẫn tồn tại. Nếu xóa ADMIN, ADMIN khác có thể tạo lại phòng cho USER chưa có phòng.
+
+`DELETE /users/{id}` trả `200` với `data: { id, deleted: true }` sau khi hoàn tất. Nếu Firebase gặp lỗi giữa chừng, tài khoản được khóa đăng nhập và ADMIN có thể gọi lại DELETE với cùng ID để tiếp tục. [Swagger xóa tài khoản](http://localhost:3615/docs/#/Users/deleteUserAndRooms)
 
 ## API tạo ADMIN
 

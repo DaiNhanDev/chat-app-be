@@ -2,6 +2,7 @@ import { UserModel } from 'src/models';
 import { isRole, ROLE, RoleType } from 'src/constants';
 import { User } from 'src/types';
 import { FilterQuery } from 'mongoose';
+import { ChatActor } from 'src/types/chat-account';
 import { CreateUserInput, PublicUser, UpdateUserInput, UserListQuery } from 'src/types/user';
 import { BaseRepositoryAbstract } from 'src/repositories/base/base.abstract.repository';
 
@@ -38,10 +39,27 @@ class UserRepository extends BaseRepositoryAbstract<User> {
 
   async activateAfterRoom(id: string, adminId: string) {
     await this.entity.updateOne(
-      { _id: id, pendingRoomAdminId: adminId },
+      { _id: id, deletedAt: null, pendingRoomAdminId: adminId },
       { $unset: { pendingRoomAdminId: 1 } },
     );
     return this.findPublicById(id);
+  }
+
+  async canCreateRoom(admin: ChatActor, user: ChatActor): Promise<boolean> {
+    const users = await this.entity
+      .find({ _id: { $in: [admin.accountId, user.accountId] }, deletedAt: null })
+      .select('_id role +firebaseUid +pendingRoomAdminId')
+      .lean();
+    return [admin, user].every((actor) =>
+      users.some(
+        (record) =>
+          String(record._id) === actor.accountId &&
+          (record.firebaseUid || String(record._id)) === actor.uid &&
+          record.role === actor.role &&
+          (!record.pendingRoomAdminId ||
+            (actor.role === ROLE.USER && record.pendingRoomAdminId === admin.accountId)),
+      ),
+    );
   }
 
   async findChatById(id: string) {
@@ -140,9 +158,24 @@ class UserRepository extends BaseRepositoryAbstract<User> {
       .lean();
   }
 
-  async deleteById(id: string): Promise<boolean> {
-    const result = await this.entity.deleteOne({ _id: id, ...active });
-    return result.deletedCount === 1;
+  async beginDeletion(id: string) {
+    const account = await this.entity
+      .findOneAndUpdate(
+        { _id: id, ...active },
+        { $currentDate: { deletedAt: true } },
+        { new: true },
+      )
+      .select('_id email name role +firebaseUid')
+      .lean();
+    if (account) return account;
+    return this.entity
+      .findOne({ _id: id, deletedAt: { $ne: null }, pendingRoomAdminId: { $exists: false } })
+      .select('_id email name role +firebaseUid')
+      .lean();
+  }
+
+  async finishDeletion(id: string): Promise<void> {
+    await this.entity.deleteOne({ _id: id, deletedAt: { $ne: null } });
   }
 
   async findUserByEmail(email: string): Promise<User | null> {

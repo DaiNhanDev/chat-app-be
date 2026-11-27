@@ -79,15 +79,17 @@ export const userPaths = {
       description:
         'Chỉ ADMIN. PATCH nhận các field cần sửa. Server băm mật khẩu mới và chặn ADMIN tự hạ quyền.',
     }),
-    delete: operation('Users', 'Xóa tài khoản MongoDB', {
+    delete: operation('Users', 'Xóa tài khoản cùng các phòng chat liên quan', {
       ...admin,
+      operationId: 'deleteUserAndRooms',
       params: [id()],
       result: {
         type: 'object',
         properties: { id: { type: 'string' }, deleted: { type: 'boolean' } },
       },
       description:
-        'Chỉ ADMIN. Xóa vĩnh viễn tài khoản MongoDB. Server chặn ADMIN tự xóa tài khoản của mình.',
+        'Chỉ ADMIN. Xóa vĩnh viễn tài khoản, phòng mà tài khoản là thành viên, tin nhắn trong phòng và mục phòng trong danh sách của mọi thành viên. ADMIN không thể tự xóa. Nếu lần xóa trước bị gián đoạn, gọi lại cùng ID để tiếp tục.',
+      notFound: 'Không tìm thấy tài khoản.',
     }),
   },
 };

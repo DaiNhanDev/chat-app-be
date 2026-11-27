@@ -20,6 +20,7 @@ export interface ConversationInfo extends RoomReadInfo {
   members: Record<string, string>;
   memberSlots?: Record<string, string>;
   createdBy: string;
+  ownerAccountId?: string;
   createdAt: number;
   updatedAt: number;
   lastMessage: string;
@@ -28,7 +29,7 @@ export interface ConversationInfo extends RoomReadInfo {
 }
 export interface Conversation extends Omit<
   ConversationInfo,
-  'memberIds' | 'memberSlots' | 'readState' | 'unreadRevision'
+  'memberIds' | 'memberSlots' | 'readState' | 'unreadRevision' | 'ownerAccountId'
 > {
   id: string;
   memberIds: string[];

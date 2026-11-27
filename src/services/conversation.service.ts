@@ -32,10 +32,14 @@ export class ConversationService {
       );
     if (await userRepository.chatUidOwnedByOther(user.uid, user.accountId))
       throw new Error('Chat identity belongs to another account');
-    return this.repository.create(admin, user);
+    return this.repository.create(admin, user, () => userRepository.canCreateRoom(admin, user));
   }
 
   async list(uid: string) {
     return { conversations: await this.repository.list(uid) };
+  }
+
+  deleteForAccount(actor: ChatActor) {
+    return this.repository.deleteForAccount(actor);
   }
 }
